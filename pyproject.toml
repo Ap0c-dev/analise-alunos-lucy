@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "analise-oficina-atores"
+version = "0.1.0"
+description = ""
+authors = ["Tiago Alcantara <apoc.dev.git@gmail.com>"]
+
+
+[tool.poetry.dependencies]
+python = "^3.10"
+PyDrive2 = "^1.16.0"
+google-api-python-client = "^2.0.0"
+
+[tool.poetry.group.dev.dependencies]
+debugpy = "^1.8.15"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
