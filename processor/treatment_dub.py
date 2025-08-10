@@ -1,11 +1,9 @@
+import unicodedata
 import pandas as pd
-import numpy as np
 import re
-import matplotlib.pyplot as plt
-
 
 def get_professor_name():
-    df = pd.read_excel('CONTROLE DE ALUNOS DUBLAGEM.xlsx', sheet_name='DUBLAGEM', header=[0,1]) 
+    df = pd.read_excel('data/CONTROLE DE ALUNOS DUBLAGEM.xlsx', sheet_name='DUBLAGEM', header=[0,1]) 
     professores = list(df.columns.get_level_values(0).unique())
 
     lista_dfs = []
@@ -25,82 +23,84 @@ def get_professor_name():
         df_final = pd.DataFrame()
     return df_final
 
-
 def clean_column_names(df):
     df = df.rename(columns={'PGT': 'dia_pagamento'})
-    df.columns = (
-        str(col)
-        .strip()
-        .lower()
-        .replace(' ', '_')
-        .translate(str.maketrans('áéíóú', 'aeiou'))
-        for col in df.columns
-    )
+    df.columns = [str(col).strip().lower().replace(' ', '_').translate(str.maketrans('áéíóú', 'aeiou')) 
+                for col in df.columns]
+    
+    if 'dia_pagamento' in df.columns:
+        def clean_day(value):
+            try:
+                day = int(float(str(value)))
+                return day if 1 <= day <= 31 else None
+            except (ValueError, TypeError):
+                value_str = str(value).strip()
+                clean_str = re.sub(r'[^\d\-/]', '', value_str)
+                
+                if '-' in clean_str:
+                    first_num = clean_str.split('-')[0]
+                    try:
+                        day = int(first_num)
+                        return day if 1 <= day <= 31 else None
+                    except ValueError:
+                        return None
+                
+                numbers = re.findall(r'\d+', clean_str)
+                if numbers:
+                    day = int(numbers[0])
+                    return day if 1 <= day <= 31 else None
+                
+                return None
+        
+        df['dia_pagamento'] = (
+            df['dia_pagamento']
+            .map(clean_day)
+            .astype('Int64')
+        )
+    
     return df
 
 def clean_columns_data(df):
-    df['professor'] = df['professor'].str.split().str[:2].str.join(' ')
-    df['professor'] = df['professor'].str.title()
+    df['professor'] = df['professor'].str.split().str[:2].str.join(' ').str.title()
     df['aluno'] = df['aluno'].str.title()
     df['dia_aula'] = df['dia_aula'].str.split().str[:1].str.join(' ')
+    df['modalidade'] = df['modalidade'].str.split().str[:1].str.join(' ').str.lower()
     return df
-    
-def plot_alunos_por_professor(df):
-    
-    alunos_por_professor = df['professor'].value_counts()
-    
-    plt.figure(figsize=(10,6))
-    alunos_por_professor.plot(kind='barh', color='skyblue')
-    
-    plt.title('Quantidade de alunos por professor')
-    plt.xlabel('Número de Alunos', fontsize=12)
-    plt.ylabel('Professor', fontsize=12)
-    
-    for index, value in enumerate(alunos_por_professor):
-        plt.text(value, index, f'{value}', va='center')
-    
-    plt.tight_layout()
-    plt.show()
 
-def calcular_mensalidades_por_professor(df):
-    if 'valor' not in df.columns:
-        print("Aviso: Coluna 'valor' não encontrada no DataFrame.")
-        print("Colunas disponíveis:", df.columns.tolist())
+def normalize_dia_aula(dia):
+    if pd.isna(dia):
         return None
     
-    df['valor'] = pd.to_numeric(df['valor'], errors='coerce').fillna(0)
+    dias_map = {
+        'SEG': ['segunda', '2a', '2ª', 'segunda-feira', 'seg'],
+        'TER': ['terca', 'terça', '3a', '3ª', 'terca-feira', 'ter'],
+        'QUA': ['quarta', '4a', '4ª', 'quarta-feira', 'qua'],
+        'QUI': ['quinta', '5a', '5ª', 'quinta-feira', 'qui'],
+        'SEX': ['sexta', '6a', '6ª', 'sexta-feira', 'sex'],
+        'SAB': ['sabado', 'sábado', 'sab'],
+        'DOM': ['domingo', 'dom']
+    }
     
-    mensalidades = df.groupby('professor')['valor'].sum()
+    dia_str = str(dia).strip().lower()
+    dia_str = unicodedata.normalize('NFKD', dia_str)
+    dia_str = ''.join([c for c in dia_str if not unicodedata.combining(c)])
+    dia_str = re.sub(r'[-_ ]', '', dia_str)
     
-    return mensalidades
+    for normalized, variants in dias_map.items():
+        if any(variant.replace('-', '').replace('ç', 'c') in dia_str for variant in variants):
+            return normalized
+    
+    return None
 
-def plot_mensalidade_por_professor(df):
-    mensalidades = calcular_mensalidades_por_professor(df)
-    
-    if mensalidades is None:
-        return
-    
-    plt.figure(figsize=(10,6))
-    ax = mensalidades.plot(kind='barh', color='lightgreen')  # Mudei para barh (horizontal)
-    
-    plt.title('Total de Mensalidades por Professor')
-    plt.xlabel('Valor Total (R$)')
-    plt.ylabel('Professor')
-    
-    # Adiciona os valores nas barras
-    for i, v in enumerate(mensalidades):
-        ax.text(v + 0.5, i, f'R$ {v:,.2f}', color='black', va='center')  # Formata com 2 decimais
-    
-    plt.tight_layout()
-    plt.show()
-        
+def process_data():
+    """Função principal que executa todo o processamento"""
+    df = get_professor_name()
+    df = clean_column_names(df)
+    df = clean_columns_data(df)
+    df['dia_aula'] = df['dia_aula'].apply(normalize_dia_aula)
+    return df
+
 if __name__ == "__main__":
-    df_final = get_professor_name()
-    df_final = clean_column_names(df_final)
-    df_final = clean_columns_data(df_final)
-
-    plot_alunos_por_professor(df_final)
-    plot_mensalidade_por_professor(df_final)
-
-    #output_path = 'data/controle_dublagem_todos_professores.xlsx'
-    #df_final.to_excel(output_path, index=False)
+    df_processed = process_data()
+    df_processed.to_excel('data/controle_dublagem_todos_professores.xlsx', index=False)
+    print(f"DataFrame retornado: {type(df_processed)}")
